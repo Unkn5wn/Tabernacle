@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NDC & Pager Cipher Decoder with FDA CSV Fallback</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Papa Parse for CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Google Fonts for medical feel -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Montserrat:wght@700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(120deg, #eaf6fb 0%, #f8fff8 100%);
+      min-height: 100vh;
+      font-family: 'Inter', Arial, sans-serif;
+      color: #245267; margin: 0;
+    }
+    .container { max-width: 950px; margin: 2.7em auto 0 auto; background: #fff;
+      border-radius: 17px; box-shadow: 0 2px 20px 1px rgba(60,170,160,.11);
+      padding: 2.15em 2.4em 2.4em 2.4em; border:1.5px solid #c3eae6;
+      position: relative; overflow: hidden;
+    }
+    .stethoscope { position: absolute; top: 18px; right: 32px; font-size: 2.05em;
+      color: #23a18e; opacity: 0.8; filter: drop-shadow(0 2px 5px #56cbb47d);
+      pointer-events: none; z-index: 2;
+    }
+    h1 { text-align: center; color: #129c8e; letter-spacing:.03em;
+      font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+      font-size: 2.25em; margin-top: .09em; margin-bottom: 0.3em; font-weight: 700; position: relative; }
+    .instructions { color: #257f4b; background: #ecfef2; border-left:5px solid #2fc27b;
+      padding:1.09em 1.15em .4em 1.25em; border-radius: 10px; margin-bottom:1.19em; font-size:1.05em; font-weight:500; }
+    textarea { width:100%; max-width:100%; min-height:74px; font-size:1.08em;
+      border:2px solid #b6e0e6; background:#fafefd; color:#255864; border-radius:10px;
+      font-family:'Inter', Arial, sans-serif; padding:.89em 1em; margin-top:.43em; transition:border .12s;
+      box-shadow: 0 1px 8px #56cbb417 inset;
+    }
+    textarea:focus { border:2px solid #21a8de; outline: none; background: #f5fcfb; }
+    button { background: #17b89d; color: #fff; border: none; font-size:1.07em; font-weight:600;
+      border-radius: 7px; padding:.6em 2.1em; margin: 1em .5em 0 0; cursor:pointer;
+      box-shadow:0 2px 13px 0 rgba(34,138,106,0.11); letter-spacing:.01em;
+      transition:background .13s,box-shadow .18s;
+      font-family:'Inter', Arial, sans-serif;
+    }
+    button:hover { background:#21dac0; box-shadow:0 3px 17px 0 rgba(16,90,67,0.09);}
+    #ndc_output { margin-top: 1.3em; padding:1.11em 1.05em 1.2em 1.05em; background:#fafdfe; border-radius:13px;
+      font-size:1.12em; color:#253f44; box-shadow:0 2px 9px 0 rgba(60,128,120,0.05); min-height: 2.19em; max-height:510px; overflow:auto; }
+    table.batch-table { width:100%; border-collapse:collapse; margin-bottom:1.1em;
+      background: #f7fafc; border-radius:7px; overflow: hidden; box-shadow: 0 1px 7px #10e4a81a; }
+    table.batch-table th, table.batch-table td { padding:.42em .19em; text-align:left; border-bottom:1px solid #e4eae5; vertical-align:top; }
+    table.batch-table th { background: #bdebe6; color: #168c7c; font-weight: 600; }
+    .blankcell {background:#fafcff !important;}
+    table.batch-table tr:first-child th {border-top:0;}
+    table.batch-table tr:last-child td {border-bottom:0;}
+    .fda-summary { color:#19668a; font-size:.98em; padding-top:.17em;}
+    .source-fdaapi { color: #2374d4; background:#e5ecfc; padding:1px 7px 2px 7px; border-radius:6px;}
+    .source-csv   { color: #23ad5a; background:#d4f7e4; padding:1px 7px 2px 7px; border-radius:6px;}
+    @media (max-width:950px) { .container{padding:1em .5em;} }
+    @media (max-width:600px) { h1 {font-size: 1.23em;} th,td {font-size:.98em;} }
+  </style>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg width='51' height='51' viewBox='0 0 51 51' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cellipse cx='25.5' cy='25.5' rx='25.5' ry='25.5' fill='%2317b89d'/%3E%3Cpath d='M17 16v6M17 16a3 3 0 0 1 6 0v6m-6-6h6M27 30a6 6 0 0 0 12 0V24m-6 12V24m6 0V12a3 3 0 1 0-6 0v12' stroke='%23fff' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+  <div class="container">
+    <span class="stethoscope" aria-label="doctor stethoscope">
+      <svg width="38" height="38" viewBox="0 0 40 40" fill="none" style="vertical-align:-5px;"><ellipse cx="20" cy="20" rx="19" ry="19" fill="#21bfa4"/><path d="M13 14v4.3M13 14a2.3 2.3 0 0 1 4.6 0v4.3m-4.6-4.3h4.6M22 25.5a4.6 4.6 0 0 0 9.2 0v-5.2m-4.6 9.2v-9.2m4.6 0v-9.2a2.3 2.3 0 0 0-4.6 0v9.2" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </span>
+    <h1>NDC → Pager Cipher &amp; OpenFDA Decoder <small style="font-size:45%;">+ FDA CSV Directory Fallback</small></h1>
+    <div class="instructions">
+      1. <b>OPTIONAL: Upload the FDA Product CSV (NDC_Product.txt)</b> for 100% NDC lookup.<br>
+      2. Enter up to <b>50</b> NDCs (with dashes, digits, or spaces), or drug names.<br>
+      <b>Split codes by comma or line.</b> Spaces in codes (e.g. <code>0002 8215 01</code>) are normalized.<br>
+      <b>If a code isn't in OpenFDA, it will be found via the CSV if present!</b>
+      <br><br>
+      <input type="file" id="csvFileInput" accept=".csv,.txt" style="margin-bottom:.5em"/>
+      <span id="csvStatus" style="padding-left:.7em; color:#167d49;"></span>
+    </div>
+    <form onsubmit="lookupNDC(); return false;">
+      <textarea id="ndcbox" placeholder="e.g. 55154-3578-0&#10;0002-8215-01&#10;acetaminophen"></textarea><br>
+      <button type="submit">Decode NDC</button>
+      <button type="button" onclick="downloadNDCBatch()" style="background:#129c8e;">Download NDC Report</button>
+    </form>
+    <div id="ndc_output"></div>
+  </div>
+  <script>
+    // -- CSV upload and indexing variables
+    let ndcCsvData = [];
+    let ndcCsvIndex = {};
+
+    document.getElementById('csvFileInput').addEventListener('change', function(e) {
+      let file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('csvStatus').textContent = 'Loading...';
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          ndcCsvData = results.data;
+          ndcCsvIndex = {};
+          for(let row of results.data){
+            let ndc = (row['PRODUCTNDC'] || '').replace(/\D/g,'');
+            if(ndc.length >= 9) ndcCsvIndex[ndc] = row;
+          }
+          document.getElementById('csvStatus').textContent =
+            'FDA directory loaded (' + ndcCsvData.length + ' entries)';
+        },
+        error: function() {
+          document.getElementById('csvStatus').textContent = 'Error reading file.';
+        }
+      });
+    });
+
+    // Try several normalized NDC variants
+    function generateNdcVariants(input) {
+      let raw = input.replace(/[^0-9]/g, "");
+      let dashed = [];
+      if (raw.length === 10) {
+        dashed.push(raw.substr(0,4)+"-"+raw.substr(4,4)+"-"+raw.substr(8,2));
+        dashed.push(raw.substr(0,5)+"-"+raw.substr(5,3)+"-"+raw.substr(8,2));
+        dashed.push(raw.substr(0,5)+"-"+raw.substr(5,4)+"-"+raw.substr(9,1));
+        dashed.push("0"+raw.substr(0,4)+"-"+raw.substr(4,4)+"-"+raw.substr(8,2));
+      } else if (raw.length === 11) {
+        dashed.push(raw.substr(0,5)+"-"+raw.substr(5,4)+"-"+raw.substr(9,2));
+      }
+      let z = input.replace(/\s+/g, "");
+      return Array.from(new Set([
+        ...dashed,
+        ...dashed.map(x=>x.replace(/-/g,"")),
+        z, raw
+      ])).filter(Boolean);
+    }
+
+    // Pager Cipher logic
+    const pagerReverse = {
+      "6": ["A","C","G"], "8": ["A","B"], "0": ["D","O","Q"], "3": ["E"], "4": ["F","H","Y"],
+      "1": ["I"], "7": ["J","L","T"], "15": ["K"], "177": ["M"], "17": ["N"], "9": ["P"], "12": ["R"],
+      "5": ["S"], "11": ["U","V"], "111": ["W"], "25": ["X"], "2": ["Z"]
+    };
+    function groupings(s) {
+      const memo = {};
+      function helper(str) {
+        if(str.length === 0) return [[]];
+        if (memo[str]) return memo[str];
+        let all = [];
+        for(let len=1; len<=3 && len<=str.length; ++len) {
+          let head = str.slice(0,len);
+          if (pagerReverse[head]) {
+            for (const rest of helper(str.slice(len))) {
+              all.push([head,...rest]);
+            }
+          }
+        }
+        return memo[str] = all;
+      }
+      return helper(s);
+    }
+    function cartesian(arrays) {
+      if (!arrays.length) return [];
+      return arrays.reduce((a,b)=>a.flatMap(d=>b.map(e=>d.concat([e]))), [[]]);
+    }
+
+    // -- OpenFDA Search
+    async function fetchOpenFDAInfo(userInput) {
+      let variants = generateNdcVariants(userInput);
+      let queries = [];
+      variants.forEach(v => {
+        queries.push({k:"product_ndc",v});
+        queries.push({k:"package_ndc",v});
+      });
+      queries.push({k:"brand_name",v:userInput});
+      queries.push({k:"generic_name",v:userInput});
+      for (let {k,v} of queries) {
+        let url = `https://api.fda.gov/drug/ndc.json?search=${k}:"${v}"&limit=1`;
+        //console.log('OpenFDA search:', url); // Uncomment for debugging
+        try {
+          let resp = await fetch(url);
+          if (!resp.ok) continue;
+          let json = await resp.json();
+          if (json && json.results && json.results.length) {
+            let rec = json.results[0];
+            let ndc = rec.product_ndc || rec.package_ndc || userInput;
+            let desc =
+              (rec.brand_name ? rec.brand_name : "") +
+              (rec.generic_name && rec.generic_name !== rec.brand_name
+                ? " / " + rec.generic_name
+                : "");
+            let manuf = rec.labeler_name || "";
+            let type = rec.product_type || "";
+            let substance = Array.isArray(rec.substance_name) ? rec.substance_name.join(", ") : (rec.substance_name||"");
+            let route = Array.isArray(rec.route) ? rec.route.join(", ") : (rec.route||"");
+            let dosage = rec.dosage_form || "";
+            let ingredients = rec.active_ingredients
+              ? rec.active_ingredients
+                  .map(ai => ai.name + (ai.strength ? ` (${ai.strength})` : ""))
+                  .join(', ')
+              : "";
+            let summary = "";
+            summary += desc ? `Brand/Generic: ${desc}\n` : "";
+            summary += manuf ? `Manufacturer: ${manuf}\n` : "";
+            summary += type ? `Type: ${type}\n` : "";
+            summary += route ? `Route: ${route}\n` : "";
+            summary += dosage ? `Dosage Form: ${dosage}\n` : "";
+            summary += substance ? `Substances: ${substance}\n` : "";
+            summary += ingredients ? `Ingredients: ${ingredients}\n` : "";
+            summary = summary.trim();
+            return {
+              found: true,
+              ndc: ndc,
+              desc: desc,
+              summary: summary,
+              source: 'OpenFDA'
+            };
+          }
+        } catch (e) { /* try next variant */ }
+      }
+      return { found: false, ndc: userInput, desc: "", summary: "(OpenFDA: No results)", source: null };
+    }
+
+    // -- CSV search fallback
+    function searchNDC_CSV(userInput) {
+      let clean = userInput.replace(/\D/g,"");
+      let tryVariants = [clean];
+      if(clean.length===9) tryVariants.push('0'+clean);
+      if(clean.length===10) tryVariants.push('0'+clean);
+      // Try direct as displayed Product NDC
+      for(let key of tryVariants){
+        if(ndcCsvIndex[key]) return ndcCsvIndex[key];
+      }
+      return null;
+    }
+
+    function getCurrentDateTime() {
+      const now = new Date(); const yyyy = now.getFullYear();
+      const mm = String(now.getMonth()+1).padStart(2,'0'); const dd = String(now.getDate()).padStart(2,'0');
+      const hh = String(now.getHours()).padStart(2,'0'); const min = String(now.getMinutes()).padStart(2,'0'); const ss = String(now.getSeconds()).padStart(2,'0');
+      return {date: `${yyyy}-${mm}-${dd}`, time: `${hh}:${min}:${ss}`};
+    }
+
+    let lastNDCBatch = '';
+    async function lookupNDC() {
+      let val = document.getElementById('ndcbox').value;
+      if (!val) { document.getElementById('ndc_output').innerHTML = '<i>Enter NDC code(s) or drug name(s).</i>'; lastNDCBatch = ''; return; }
+      // Only split on newlines or commas, not spaces!
+      let entries = val.split(/,|\n/).map(x=>x.replace(/\s+/g,'').trim()).filter(Boolean);
+      if (entries.length > 50) entries = entries.slice(0, 50);
+      let txtRows = [];
+      let todayHeader = '';
+      const dateNow = new Date();
+      todayHeader = '----------------------------------------------------------------------\n' +
+        dateNow.toLocaleDateString() + ' ' + dateNow.toLocaleTimeString() +
+        '\nNDC PAGER & OpenFDA DECODER - GOVERNMENT REPORT FORMAT\n' +
+        'Live: api.fda.gov, Historic: FDA CSV fallback\n' +
+        '----------------------------------------------------------------------\n' +
+        'DATE       TIME     NDC and DRUG NAME\n' +
+        '                      PAGER DECODINGS\n' +
+        '                      Data Source  |  Details\n';
+      let html = `<table class="batch-table"><tr>
+        <th>Date</th><th>Time</th>
+        <th>NDC (Description)</th>
+        <th>Pager Decoding(s)</th>
+        <th>Source / Info</th></tr>`;
+
+      for (let entry of entries) {
+        const {date, time} = getCurrentDateTime();
+        let openfda = await fetchOpenFDAInfo(entry);
+
+        let csvRow = null, usedCSV = false;
+        if (!openfda.found && ndcCsvData.length) {
+          csvRow = searchNDC_CSV(entry);
+          if(csvRow){
+            usedCSV = true;
+            openfda = {
+              found: true,
+              ndc: csvRow['PRODUCTNDC'],
+              desc: (csvRow['PROPRIETARYNAME'] ? csvRow['PROPRIETARYNAME'] : "") +
+                    (csvRow['NONPROPRIETARYNAME'] && csvRow['NONPROPRIETARYNAME'] != csvRow['PROPRIETARYNAME']
+                      ? (" / " + csvRow['NONPROPRIETARYNAME']) : ""),
+              summary:
+                  'Labeler: ' + (csvRow['LABELERNAME']||'')+'\n' +
+                  'Dosage Form: ' + (csvRow['DOSAGEFORMNAME']||'')+'\n' +
+                  'Marketing Category: ' + (csvRow['MARKETINGCATEGORYNAME']||'')+'\n' +
+                  'Start Date: ' + (csvRow['STARTMARKETINGDATE']||'')+'\n' +
+                  'End Date: ' + (csvRow['ENDMARKETINGDATE']||''),
+              source: 'FDA CSV'
+            };
+          }
+        }
+        let digits = (openfda.ndc || '').replace(/[^\d]/g, '');
+        let combinations = [];
+        if (openfda.found && digits) {
+          let decodes = groupings(digits);
+          let allCombos = [];
+          for (const decode of decodes) {
+            let letterSets = decode.map(p=>pagerReverse[p]||["?"]);
+            let combos = cartesian(letterSets);
+            allCombos.push(...combos.map(arr=>arr.join(" ")));
+          }
+          combinations = allCombos;
+        }
+        let mainLine = `${openfda.ndc || entry} ${openfda.desc || ''}`.trim();
+        let sourceBadge = openfda.source === 'OpenFDA' ? 
+            `<span class="source-fdaapi">OpenFDA</span>` :
+            openfda.source === 'FDA CSV' ?
+            `<span class="source-csv">FDA CSV</span>` :
+            '';
+        let fdaHTML = openfda.summary
+            ? `${sourceBadge}<div class="fda-summary" style="white-space:pre-line">${openfda.summary}</div>`
+            : `${sourceBadge}<div class="fda-summary">(No details)</div>`;
+
+        if (!openfda.found) {
+          html += `<tr>
+            <td>${date}</td>
+            <td>${time}</td>
+            <td><b>${entry}</b></td>
+            <td>(not found)</td>
+            <td>${fdaHTML}</td>
+          </tr>`;
+          txtRows.push(
+            `${date}   ${time}   ${entry}\n      (not found)\n      Source: None\n----------------------------------------------------------------------`
+          );
+        } else if (!combinations.length) {
+          html += `<tr>
+            <td>${date}</td>
+            <td>${time}</td>
+            <td><b>${mainLine}</b></td>
+            <td>(no numeric part)</td>
+            <td>${fdaHTML}</td>
+          </tr>`;
+          txtRows.push(
+            `${date}   ${time}   ${mainLine}\n      (no numeric part)\n      Source: ${openfda.source||'-'}\n${openfda.summary||''}\n----------------------------------------------------------------------`
+          );
+        } else {
+          combinations.forEach((combo, idx) => {
+            if (idx === 0) {
+              html += `<tr>
+                <td>${date}</td>
+                <td>${time}</td>
+                <td><b>${mainLine}</b></td>
+                <td>${combo}</td>
+                <td rowspan="${combinations.length}" style="border-bottom:1px solid #e4eae5">${fdaHTML}</td>
+              </tr>`;
+            } else {
+              html += `<tr>
+                <td class="blankcell"></td>
+                <td class="blankcell"></td>
+                <td class="blankcell"></td>
+                <td>${combo}</td>
+              </tr>`;
+            }
+          });
+          let txt = `${date}   ${time}   ${mainLine}\n`;
+          combinations.forEach(c => {
+            txt += `      ${c}\n`;
+          });
+          txt += `      Source: ${openfda.source||'-'}\n${openfda.summary||''}\n----------------------------------------------------------------------`;
+          txtRows.push(txt);
+        }
+      }
+      html += '</table>';
+      document.getElementById('ndc_output').innerHTML = html;
+      lastNDCBatch = todayHeader + '\n' + txtRows.join('\n');
+    }
+
+    function downloadNDCBatch() {
+      if (!lastNDCBatch) {
+        alert("Please run the decoder first!");
+        return;
+      }
+      let val = document.getElementById('ndcbox').value;
+      let codes = val.split(/,|\n/).map(x=>x.replace(/\s+/g,'').trim()).filter(Boolean);
+      let codePart = codes.length === 1 ? codes[0] : (codes[0] + "_Batch");
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth()+1).padStart(2,'0');
+      const dd = String(now.getDate()).padStart(2,'0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      let filename = `${dateStr}_${codePart}_Report.txt`;
+      let blob = new Blob([lastNDCBatch], {type: "text/plain"});
+      let url = URL.createObjectURL(blob);
+      let a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{document.body.removeChild(a); URL.revokeObjectURL(url);},150);
+    }
+  </script>
+</body>
+</html>
